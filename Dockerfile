@@ -1,26 +1,28 @@
 # ============================================================
-# OpenClaw Docker Image (Render Compatible Version)
+# OpenClaw Docker Image (Render Compatible - Debian/glibc)
+# Fixes node-llama-cpp Alpine build failures
 # ============================================================
 
-FROM node:22-alpine
+FROM node:20-bookworm-slim
 
 LABEL maintainer="OpenClaw Community"
 LABEL description="OpenClaw - Your Personal AI Assistant"
-LABEL version="1.0.0-render"
+LABEL version="1.0.0-render-debian"
 
 # Install basic dependencies
-RUN apk add --no-cache \
+RUN apt-get update && apt-get install -y --no-install-recommends \
     bash \
     curl \
     git \
     jq \
-    tzdata
+    tzdata \
+    ca-certificates \
+  && rm -rf /var/lib/apt/lists/*
 
 # Set timezone (optional)
-ENV TZ=Asia/Shanghai
+ENV TZ=Asia/Ho_Chi_Minh
 RUN ln -snf /usr/share/zoneinfo/$TZ /etc/localtime && echo $TZ > /etc/timezone
 
-# Create working directory
 WORKDIR /app
 
 # Install OpenClaw globally
@@ -36,18 +38,16 @@ RUN mkdir -p /root/.openclaw/logs \
 COPY examples/config.example.yaml /root/.openclaw/config.yaml.example
 COPY examples/skills/ /root/.openclaw/skills/
 
-# Volume (note: Render free does NOT persist this)
+# Note: Render free tier filesystem is ephemeral (not persistent)
 VOLUME ["/root/.openclaw"]
 
-# Render requires dynamic port
+# Render provides PORT; we default to 18789
 ENV PORT=18789
-
-# Expose port (Render will override via PORT env)
 EXPOSE 18789
 
-# Health check
-HEALTHCHECK --interval=30s --timeout=10s --start-period=5s --retries=3 \
-    CMD openclaw health || exit 1
+# Health check (won't break deploy if endpoint differs; it's container-local)
+HEALTHCHECK --interval=30s --timeout=10s --start-period=10s --retries=3 \
+  CMD openclaw health || exit 1
 
-# IMPORTANT: Run Gateway in foreground (NO daemon mode)
+# Run OpenClaw Gateway in foreground (Render needs a single foreground process)
 CMD ["sh", "-c", "openclaw gateway --bind 0.0.0.0 --port ${PORT}"]
